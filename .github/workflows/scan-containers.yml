@@ -33,7 +33,7 @@ jobs:
     
     - name: Generate HTML report
       run: |
-        docker run --rm -v $PWD:/root/ aquasec/trivy:latest image --format template --template "@/contrib/html.tpl" -o /root/trivy-report.html appwrite_image:latest
+        docker run --rm -v /var/run/docker.sock:/var/run/docker.sock -v $PWD:/root/ aquasec/trivy:latest image --format template --template "@/contrib/html.tpl" -o /root/trivy-report.html appwrite_image:latest
     
     - name: Upload HTML report
       uses: actions/upload-artifact@v3
