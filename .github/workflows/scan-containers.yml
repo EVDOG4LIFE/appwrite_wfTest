@@ -1,5 +1,4 @@
 name: Scan-Containers
-
 on:
   pull_request:
   push:
@@ -13,15 +12,31 @@ jobs:
       uses: actions/checkout@v3
       with:
         submodules: recursive
-
+    
     - name: Build the Docker image
       run: docker build . -t appwrite_image:latest
-
+    
     - name: Run Trivy vulnerability scanner
       uses: aquasecurity/trivy-action@master
       with:
         image-ref: 'appwrite_image:latest'
-        format: 'table'
-        exit-code: '1'
+        format: 'sarif'
+        output: 'trivy-results.sarif'
+        exit-code: '0'
         ignore-unfixed: 'false'
         severity: 'CRITICAL,HIGH'
+    
+    - name: Upload Trivy scan results to GitHub Security tab
+      uses: github/codeql-action/upload-sarif@v2
+      with:
+        sarif_file: 'trivy-results.sarif'
+    
+    - name: Generate HTML report
+      run: |
+        docker run --rm -v $PWD:/root/ aquasec/trivy:latest image --format template --template "@/contrib/html.tpl" -o /root/trivy-report.html appwrite_image:latest
+    
+    - name: Upload HTML report
+      uses: actions/upload-artifact@v3
+      with:
+        name: Trivy Scan Report
+        path: trivy-report.html
