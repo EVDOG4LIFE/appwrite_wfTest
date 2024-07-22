@@ -1,7 +1,7 @@
 FROM composer:2.0 as composer
 
 ARG TESTING=false
-ENV TESTING=$TESTING
+ENV TESTING=$TESTING 
 
 WORKDIR /usr/local/src/
 
