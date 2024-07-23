@@ -22,7 +22,7 @@ jobs:
           restore-keys: |
             ${{ runner.os }}-buildx-
       - name: Build the Docker image
-        run: docker build --cache-from=type=local,src=/tmp/.buildx-cache --cache-to=type=local,dest=/tmp/.buildx-cache --progress=plain --tag appwrite_image:latest .
+        run: docker build . -t appwrite_image:latest
       - name: Save Docker image
         run: docker save appwrite_image:latest > image.tar
       - name: Upload Docker image
