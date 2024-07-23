@@ -9,13 +9,24 @@ jobs:
     runs-on: ubuntu-latest
     steps:
     - name: Check out code
-      uses: actions/checkout@v3
+      uses: actions/checkout@v4
       with:
         submodules: recursive
-    
+
+    - name: Set up Docker Buildx
+      uses: docker/setup-buildx-action@v2
+
+    - name: Cache Docker layers
+      uses: actions/cache@v3
+      with:
+        path: /tmp/.buildx-cache
+        key: ${{ runner.os }}-buildx-${{ github.sha }}
+        restore-keys: |
+          ${{ runner.os }}-buildx-
+
     - name: Build the Docker image
-      run: docker build . -t appwrite_image:latest
-    
+      run: docker build --cache-from=type=local,src=/tmp/.buildx-cache --cache-to=type=local,dest=/tmp/.buildx-cache --progress=plain --tag appwrite_image:latest .
+
     - name: Run Trivy vulnerability scanner
       uses: aquasecurity/trivy-action@master
       with:
@@ -25,18 +36,39 @@ jobs:
         exit-code: '0'
         ignore-unfixed: 'false'
         severity: 'CRITICAL,HIGH'
-    
+        ignorefile: '.trivyignore'
+
     - name: Upload Trivy scan results to GitHub Security tab
-      uses: github/codeql-action/upload-sarif@v2
+      uses: github/codeql-action/upload-sarif@v3
       with:
         sarif_file: 'trivy-results.sarif'
-    
+
     - name: Generate HTML report
       run: |
         docker run --rm -v /var/run/docker.sock:/var/run/docker.sock -v $PWD:/root/ aquasec/trivy:latest image --format template --template "@/contrib/html.tpl" -o /root/trivy-report.html appwrite_image:latest
-    
-    - name: Upload HTML report
-      uses: actions/upload-artifact@v3
+
+    - name: Upload HTML report as artifact
+      uses: actions/upload-artifact@v4
       with:
         name: Trivy Scan Report
         path: trivy-report.html
+
+    - name: Deploy report to GitHub Pages
+      if: github.event_name == 'push'
+      uses: peaceiris/actions-gh-pages@v3
+      with:
+        github_token: ${{ secrets.GITHUB_TOKEN }}
+        publish_dir: ./
+        publish_branch: gh-pages
+
+    - name: Create a GitHub Pages redirect file
+      if: github.event_name == 'push'
+      run: echo "<meta http-equiv='refresh' content='0; url=trivy-report.html'>" > index.html
+
+    - name: Upload redirect file to GitHub Pages
+      if: github.event_name == 'push'
+      uses: peaceiris/actions-gh-pages@v3
+      with:
+        github_token: ${{ secrets.GITHUB_TOKEN }}
+        publish_dir: ./
+        publish_branch: gh-pages
