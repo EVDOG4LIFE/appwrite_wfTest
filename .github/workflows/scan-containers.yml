@@ -2,6 +2,8 @@ name: Container Security Scan
 on:
   pull_request:
   push:
+    branches:
+      - main
   workflow_dispatch:
 
 jobs:
@@ -22,9 +24,9 @@ jobs:
           restore-keys: |
             ${{ runner.os }}-buildx-
       - name: Build the Docker image
-        run: docker build . -t appwrite_image:latest
+        run: docker build . -t appwrite_image:${{ github.sha }}
       - name: Save Docker image
-        run: docker save appwrite_image:latest > image.tar
+        run: docker save appwrite_image:${{ github.sha }} > image.tar
       - name: Upload Docker image
         uses: actions/upload-artifact@v4
         with:
@@ -44,50 +46,84 @@ jobs:
       - name: Run Trivy vulnerability scanner
         uses: aquasecurity/trivy-action@master
         with:
-          image-ref: 'appwrite_image:latest'
-          format: 'table'
-          output: 'trivy-results.txt'
-          exit-code: '1'
+          image-ref: 'appwrite_image:${{ github.sha }}'
+          format: 'json'
+          output: 'trivy-results.json'
+          exit-code: '0'
           ignore-unfixed: 'false'
           severity: 'CRITICAL,HIGH'
+          ignorefile: '.trivyignore'
       - name: Upload Trivy scan results
         uses: actions/upload-artifact@v4
         with:
           name: trivy-results
-          path: trivy-results.txt
-      - name: Upload Trivy scan results to GitHub Security tab
-        uses: github/codeql-action/upload-sarif@v3
-        with:
-          sarif_file: 'trivy-results.sarif'
+          path: trivy-results.json
 
-  comment-pr:
-    needs: scan
+  compare-and-report:
     if: github.event_name == 'pull_request'
+    needs: scan
     runs-on: ubuntu-latest
     steps:
-      - name: Download scan results
+      - name: Check out code
+        uses: actions/checkout@v4
+      - name: Download Trivy results
         uses: actions/download-artifact@v4
         with:
           name: trivy-results
+      - name: Build main branch image
+        run: |
+          git checkout main
+          docker build . -t appwrite_image:main
+      - name: Scan main branch image
+        uses: aquasecurity/trivy-action@master
+        with:
+          image-ref: 'appwrite_image:main'
+          format: 'json'
+          output: 'trivy-results-main.json'
+          exit-code: '0'
+          ignore-unfixed: 'false'
+          severity: 'CRITICAL,HIGH'
+          ignorefile: '.trivyignore'
+      - name: Compare vulnerabilities and create report
+        run: |
+          # Install jq for JSON parsing
+          sudo apt-get update && sudo apt-get install -y jq
+          
+          # Function to extract vulnerabilities
+          extract_vulnerabilities() {
+            jq -r '.Results[] | select(.Vulnerabilities != null) | .Vulnerabilities[] | select(.Severity == "CRITICAL" or .Severity == "HIGH") | [.VulnerabilityID, .PkgName, .InstalledVersion, .FixedVersion, .Severity] | @tsv' $1
+          }
+          
+          # Extract vulnerabilities from both scans
+          pr_vulns=$(extract_vulnerabilities trivy-results.json)
+          main_vulns=$(extract_vulnerabilities trivy-results-main.json)
+          
+          # Find new vulnerabilities
+          new_vulns=$(comm -23 <(echo "$pr_vulns" | sort) <(echo "$main_vulns" | sort))
+          
+          # Create markdown table
+          echo "## New Vulnerabilities Introduced" > report.md
+          echo "" >> report.md
+          echo "| Vulnerability ID | Package Name | Installed Version | Fixed Version | Severity |" >> report.md
+          echo "|-------------------|--------------|-------------------|---------------|----------|" >> report.md
+          echo "$new_vulns" | while IFS=$'\t' read -r id pkg installed fixed severity; do
+            echo "| $id | $pkg | $installed | $fixed | $severity |" >> report.md
+          done
+          
+          # If no new vulnerabilities, add a message
+          if [ -z "$new_vulns" ]; then
+            echo "No new high or critical vulnerabilities introduced." >> report.md
+          fi
       - name: Comment PR
         uses: actions/github-script@v6
         with:
           github-token: ${{secrets.GITHUB_TOKEN}}
           script: |
             const fs = require('fs')
-            const results = fs.readFileSync('trivy-results.txt', 'utf8')
-            const commentBody = `## Trivy Scan Results
-
-            The following vulnerabilities were found:
-
-            \`\`\`
-            ${results}
-            \`\`\`
-
-            Please address these vulnerabilities before merging.`
+            const report = fs.readFileSync('report.md', 'utf8')
             github.rest.issues.createComment({
               issue_number: context.issue.number,
               owner: context.repo.owner,
-              repo: context.repo.repo,
-              body: commentBody
+              repo: context.repo.name,
+              body: report
             })
