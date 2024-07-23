@@ -50,7 +50,6 @@ jobs:
           exit-code: '1'
           ignore-unfixed: 'false'
           severity: 'CRITICAL,HIGH'
-          ignorefile: '.trivyignore'
       - name: Upload Trivy scan results
         uses: actions/upload-artifact@v4
         with:
