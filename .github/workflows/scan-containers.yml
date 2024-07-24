@@ -1,6 +1,8 @@
 name: PR Security Scan
 on:
-  pull_request:
+  pull_request_target:
+    types: [opened, synchronize, reopened]
+  workflow_dispatch:
 
 jobs:
   scan:
@@ -9,6 +11,8 @@ jobs:
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.head.sha }}
 
       - name: Run Trivy vulnerability scanner
         uses: aquasecurity/trivy-action@master
@@ -20,9 +24,9 @@ jobs:
           severity: 'HIGH,CRITICAL'
 
       - name: Post PR comment
-        uses: actions/github-script@v6
+        uses: actions/github-script@v7
         with:
-          github-token: ${{secrets.GITHUB_TOKEN}}
+          github-token: ${{ secrets.GITHUB_TOKEN }}
           script: |
             const fs = require('fs');
             const results = JSON.parse(fs.readFileSync('trivy-results.json', 'utf8'));
@@ -42,9 +46,9 @@ jobs:
               });
             }
             
-            github.rest.issues.createComment({
+            await github.rest.issues.createComment({
               issue_number: context.issue.number,
               owner: context.repo.owner,
-              repo: context.repo.name,
+              repo: context.repo.repo,
               body: comment
             });
