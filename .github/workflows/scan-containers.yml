@@ -3,7 +3,6 @@ on:
   pull_request:
     types: [opened, synchronize, reopened]
   workflow_dispatch:
-
 jobs:
   scan:
     runs-on: ubuntu-latest
@@ -13,7 +12,6 @@ jobs:
       with:
         fetch-depth: 0
         submodules: 'recursive'
-
     - name: Build the Docker image
       uses: docker/build-push-action@v5
       with: 
@@ -21,7 +19,6 @@ jobs:
         push: false
         load: true
         tags: pr_image:${{ github.sha }}
-
     - name: Run Trivy vulnerability scanner on image
       uses: aquasecurity/trivy-action@master
       with:
@@ -29,7 +26,6 @@ jobs:
         format: 'json'
         output: 'trivy-image-results.json'
         severity: 'CRITICAL,HIGH'
-
     - name: Run Trivy vulnerability scanner on source code
       uses: aquasecurity/trivy-action@master
       with:
@@ -38,7 +34,6 @@ jobs:
         format: 'json'
         output: 'trivy-fs-results.json'
         severity: 'CRITICAL,HIGH,MEDIUM'
-
     - name: Process and post Trivy scan results
       uses: actions/github-script@v7
       with:
@@ -50,22 +45,17 @@ jobs:
           function processResults(results, title) {
             let sectionBody = `### ${title}\n\n`;
             if (results.Results && results.Results.some(result => result.Vulnerabilities && result.Vulnerabilities.length > 0)) {
-              sectionBody += '| Package | Version | Vulnerability | Severity | Notes |\n';
-              sectionBody += '|---------|---------|----------------|----------|-------|\n';
+              sectionBody += '| Package | Version | Vulnerability | Severity |\n';
+              sectionBody += '|---------|---------|----------------|----------|\n';
               
               const uniqueVulns = new Set();
-              
               results.Results.forEach(result => {
                 if (result.Vulnerabilities) {
                   result.Vulnerabilities.forEach(vuln => {
                     const vulnKey = `${vuln.PkgName}-${vuln.InstalledVersion}-${vuln.VulnerabilityID}`;
                     if (!uniqueVulns.has(vulnKey)) {
                       uniqueVulns.add(vulnKey);
-                      let notes = 'Review if this affects our usage';
-                      if (vuln.PkgName.startsWith('go')) {
-                        notes = 'This may be from our base Docker image';
-                      }
-                      sectionBody += `| ${vuln.PkgName} | ${vuln.InstalledVersion} | [${vuln.VulnerabilityID}](https://nvd.nist.gov/vuln/detail/${vuln.VulnerabilityID}) | ${vuln.Severity} | ${notes} |\n`;
+                      sectionBody += `| ${vuln.PkgName} | ${vuln.InstalledVersion} | [${vuln.VulnerabilityID}](https://nvd.nist.gov/vuln/detail/${vuln.VulnerabilityID}) | ${vuln.Severity} |\n`;
                     }
                   });
                 }
