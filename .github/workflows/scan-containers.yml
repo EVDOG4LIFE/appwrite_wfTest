@@ -1,129 +1,62 @@
-name: Container Security Scan
+name: PR Security Scan
 on:
   pull_request:
-  push:
-    branches:
-      - main
-  workflow_dispatch:
+    branches: [main]
 
 jobs:
-  build:
+  security-scan:
     runs-on: ubuntu-latest
     steps:
-      - name: Check out code
+      - name: Checkout code
         uses: actions/checkout@v4
-        with:
-          submodules: recursive
-      - name: Set up Docker Buildx
-        uses: docker/setup-buildx-action@v2
-      - name: Cache Docker layers
-        uses: actions/cache@v3
-        with:
-          path: /tmp/.buildx-cache
-          key: ${{ runner.os }}-buildx-${{ github.sha }}
-          restore-keys: |
-            ${{ runner.os }}-buildx-
-      - name: Build the Docker image
-        run: docker build . -t appwrite_image:${{ github.sha }}
-      - name: Save Docker image
-        run: docker save appwrite_image:${{ github.sha }} > image.tar
-      - name: Upload Docker image
-        uses: actions/upload-artifact@v4
-        with:
-          name: docker-image
-          path: image.tar
 
-  scan:
-    needs: build
-    runs-on: ubuntu-latest
-    steps:
-      - name: Download Docker image
-        uses: actions/download-artifact@v4
-        with:
-          name: docker-image
-      - name: Load Docker image
-        run: docker load < image.tar
       - name: Run Trivy vulnerability scanner
         uses: aquasecurity/trivy-action@master
         with:
-          image-ref: 'appwrite_image:${{ github.sha }}'
-          format: 'json'
-          output: 'trivy-results.json'
-          exit-code: '0'  # Do not fail the job, continue regardless of findings
-          ignore-unfixed: 'false'
-          severity: 'CRITICAL,HIGH'
-      - name: Upload Trivy scan results
-        uses: actions/upload-artifact@v4
-        with:
-          name: trivy-results
-          path: trivy-results.json
+          scan-type: 'fs'
+          ignore-unfixed: true
+          format: 'sarif'
+          output: 'trivy-results.sarif'
+          severity: 'HIGH,CRITICAL'
 
-  compare-and-report:
-    if: github.event_name == 'pull_request'
-    needs: scan
-    runs-on: ubuntu-latest
-    steps:
-      - name: Check out code
-        uses: actions/checkout@v4
-      - name: Ensure main branch exists
-        run: |
-          if git rev-parse --verify main; then
-            echo "Main branch exists."
-          else
-            echo "Main branch does not exist."
-            exit 1
-          fi
-      - name: Download Trivy results
-        uses: actions/download-artifact@v4
+      - name: Upload Trivy scan results to GitHub Security tab
+        uses: github/codeql-action/upload-sarif@v2
         with:
-          name: trivy-results
-      - name: Build main branch image
+          sarif_file: 'trivy-results.sarif'
+
+      - name: Scan PR changes
         run: |
-          git checkout main
-          docker build . -t appwrite_image:main
-      - name: Scan main branch image
-        uses: aquasecurity/trivy-action@master
-        with:
-          image-ref: 'appwrite_image:main'
-          format: 'json'
-          output: 'trivy-results-main.json'
-          exit-code: '0'  # Continue despite findings
-          ignore-unfixed: 'false'
-          severity: 'CRITICAL,HIGH'
-      - name: Compare vulnerabilities and create report
+          base_commit=$(git merge-base ${{ github.event.pull_request.base.sha }} ${{ github.sha }})
+          changed_files=$(git diff --name-only $base_commit ${{ github.sha }})
+          echo "$changed_files" | xargs trivy fs --format json --output pr-changes-scan.json
+
+      - name: Analyze PR scan results
         run: |
-          sudo apt-get update && sudo apt-get install -y jq
-          
-          extract_vulnerabilities() {
-            jq -r '.Results[] | select(.Vulnerabilities != null) | .Vulnerabilities[] | select(.Severity == "CRITICAL" or .Severity == "HIGH") | [.VulnerabilityID, .PkgName, .InstalledVersion, .FixedVersion, .Severity] | @tsv' $1
-          }
-          
-          pr_vulns=$(extract_vulnerabilities trivy-results.json)
-          main_vulns=$(extract_vulnerabilities trivy-results-main.json)
-          
-          new_vulns=$(comm -23 <(echo "$pr_vulns" | sort) <(echo "$main_vulns" | sort))
-          
-          echo "## New Vulnerabilities Introduced" > report.md
-          echo "" >> report.md
-          echo "| Vulnerability ID | Package Name | Installed Version | Fixed Version | Severity |" >> report.md
-          echo "|-------------------|--------------|-------------------|---------------|----------|" >> report.md
-          echo "$new_vulns" | while IFS=$'\t' read -r id pkg installed fixed severity; do
-            echo "| $id | $pkg | $installed | $fixed | $severity |" >> report.md
-          done
-          
-          if [ -z "$new_vulns" ]; then
-            echo "No new high or critical vulnerabilities introduced." >> report.md
-          fi
+          jq '.Results[] | select(.Vulnerabilities != null) | .Vulnerabilities[] | select(.Severity == "HIGH" or .Severity == "CRITICAL")' pr-changes-scan.json > new-vulnerabilities.json
+
       - name: Comment PR
         uses: actions/github-script@v6
         with:
           github-token: ${{secrets.GITHUB_TOKEN}}
           script: |
-            const fs = require('fs')
-            const report = fs.readFileSync('report.md', 'utf8')
+            const fs = require('fs');
+            const newVulns = JSON.parse(fs.readFileSync('new-vulnerabilities.json', 'utf8'));
+            
+            let comment = '## Security Scan Results\n\n';
+            if (newVulns.length > 0) {
+              comment += 'New potential vulnerabilities found in this PR:\n\n';
+              newVulns.forEach(vuln => {
+                comment += `- **${vuln.VulnerabilityID}** (${vuln.Severity}): ${vuln.Title}\n`;
+                comment += `  Package: ${vuln.PkgName} (${vuln.InstalledVersion})\n`;
+                comment += `  Fixed Version: ${vuln.FixedVersion || 'Not available'}\n\n`;
+              });
+            } else {
+              comment += 'No new high or critical vulnerabilities found in the changes.\n';
+            }
+            
             github.rest.issues.createComment({
               issue_number: context.issue.number,
               owner: context.repo.owner,
               repo: context.repo.name,
-              body: report
-            })
+              body: comment
+            });
