@@ -73,7 +73,7 @@
         "utopia-php/websocket": "0.1.*",
         "matomo/device-detector": "6.1.*",
         "dragonmantank/cron-expression": "3.3.2",
-        "phpmailer/phpmailer": "6.9.1",
+        "phpmailer/phpmailer": "5.21.1",
         "chillerlan/php-qrcode": "4.3.4",
         "adhocore/jwt": "1.1.2",
         "spomky-labs/otphp": "^10.0",
