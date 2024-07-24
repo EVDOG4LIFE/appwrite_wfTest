@@ -9,65 +9,68 @@ jobs:
   security_scan:
     runs-on: ubuntu-latest
     steps:
-    - name: Check out code
-      uses: actions/checkout@v3
-      with:
-        submodules: recursive
+      - name: Check out code
+        uses: actions/checkout@v3
+        with:
+          submodules: true
 
-    - name: Set up PHP
-      uses: shivammathur/setup-php@v2
-      with:
-        php-version: '8.1'  # Adjust as needed
+      - name: Set up PHP
+        uses: shivammathur/setup-php@v2
+        with:
+          php-version: '8.1'
 
-    - name: Install Composer dependencies
-      run: composer install --prefer-dist --no-progress
+      - name: Install Composer dependencies
+        run: composer install --prefer-dist --no-progress
 
-    - name: Run Trivy vulnerability scanner
-      uses: aquasecurity/trivy-action@master
-      with:
-        scan-type: 'fs'
-        format: 'table'
-        output: 'trivy-results.txt'
-        severity: 'CRITICAL,HIGH'
+      - name: Run Trivy vulnerability scanner
+        uses: aquasecurity/trivy-action@v0.7.0
+        with:
+          scan-type: 'fs'
+          format: 'table'
+          output: 'trivy-results.txt'
+          severity: 'CRITICAL,HIGH'
+        continue-on-error: true  # Continue even if vulnerabilities are found
 
-    - name: Run OSV-Scanner
-      uses: google/osv-scanner@v1
-      with:
-        format: 'sarif'
-        output: 'osv-results.sarif'
+      - name: Run OSV-Scanner
+        uses: google/osv-scanner-action@v1.0.0
+        with:
+          output: 'osv-results.sarif'
+        continue-on-error: true
 
-    - name: Run PHP Code Sniffer
-      run: |
-        composer require --dev squizlabs/php_codesniffer
-        vendor/bin/phpcs --standard=PSR12 --report=full --report-file=phpcs-results.txt src/
+      - name: Run PHP Code Sniffer
+        run: |
+          composer require --dev squizlabs/php_codesniffer
+          vendor/bin/phpcs --standard=PSR12 --report=full --report-file=phpcs-results.txt src/
+        continue-on-error: true
 
-    - name: Run PHP Mess Detector
-      run: |
-        composer require --dev phpmd/phpmd
-        vendor/bin/phpmd src/ text cleancode,codesize,controversial,design,naming,unusedcode > phpmd-results.txt
+      - name: Run PHP Mess Detector
+        run: |
+          composer require --dev phpmd/phpmd
+          vendor/bin/phpmd src/ text cleancode,codesize,controversial,design,naming,unusedcode > phpmd-results.txt
+        continue-on-error: true
 
-    - name: Generate scan summary
-      run: |
-        echo "## Nightly DevSecOps Scan Results" > scan_summary.md
-        echo "### Trivy Scan Results" >> scan_summary.md
-        cat trivy-results.txt >> scan_summary.md
-        echo "### OSV-Scanner Results" >> scan_summary.md
-        cat osv-results.sarif >> scan_summary.md
-        echo "### PHP Code Sniffer Results" >> scan_summary.md
-        cat phpcs-results.txt >> scan_summary.md
-        echo "### PHP Mess Detector Results" >> scan_summary.md
-        cat phpmd-results.txt >> scan_summary.md
+      - name: Generate scan summary
+        run: |
+          echo "## Nightly DevSecOps Scan Results" > scan_summary.md
+          echo "### Trivy Scan Results" >> scan_summary.md
+          cat trivy-results.txt >> scan_summary.md
+          echo "### OSV-Scanner Results" >> scan_summary.md
+          cat osv-results.sarif >> scan_summary.md
+          echo "### PHP Code Sniffer Results" >> scan_summary.md
+          cat phpcs-results.txt >> scan_summary.md
+          echo "### PHP Mess Detector Results" >> scan_summary.md
+          cat phpmd-results.txt >> scan_summary.md
 
-    - name: Create Issue
-      uses: actions/github-script@v6
-      with:
-        github-token: ${{secrets.GITHUB_TOKEN}}
-        script: |
-          const fs = require('fs');
-          const summary = fs.readFileSync('scan_summary.md', 'utf8');
-          github.rest.issues.create({
-            owner: context.repo.owner,
-            repo: context.repo.repo,
-            title: 'Nightly DevSecOps Scan Results',
-            body: summary
-          });
+      - name: Create Issue
+        uses: actions/github-script@v6
+        with:
+          github-token: ${{secrets.GITHUB_TOKEN}}
+          script: |
+            const fs = require('fs');
+            const summary = fs.readFileSync('scan_summary.md', 'utf8');
+            github.rest.issues.create({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              title: 'Nightly DevSecOps Scan Results',
+              body: summary
+            });
