@@ -16,7 +16,7 @@ jobs:
 
     - name: Build the Docker image
       uses: docker/build-push-action@v5
-      with:
+      with: 
         context: .
         push: false
         load: true
