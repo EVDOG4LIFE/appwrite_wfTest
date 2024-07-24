@@ -1,58 +1,66 @@
 name: PR Security Scan
 on:
-  pull_request_target:
+  pull_request:
     types: [opened, synchronize, reopened]
   workflow_dispatch:
 
 jobs:
   scan:
-    name: Security Scan
     runs-on: ubuntu-latest
     steps:
-      - name: Checkout code
-        uses: actions/checkout@v4
-        with:
-          ref: ${{ github.event.pull_request.head.sha }}
+    - name: Check out code
+      uses: actions/checkout@v4
+      with:
+        ref: ${{ github.event.pull_request.head.sha }}
+        fetch-depth: 0
 
-      - name: Run Trivy vulnerability scanner
-        uses: aquasecurity/trivy-action@master
-        with:
-          scan-type: 'fs'
-          ignore-unfixed: true
-          format: 'json'
-          output: 'trivy-results.json'
-          severity: 'MEDIUM,HIGH,CRITICAL'
+    - name: Build the Docker image from PR
+      run: docker build . -t pr_image:${{ github.sha }}
 
-      - name: Post PR comment
-        uses: actions/github-script@v7
-        with:
-          github-token: ${{ secrets.GITHUB_TOKEN }}
-          script: |
-            const fs = require('fs');
-            const results = JSON.parse(fs.readFileSync('trivy-results.json', 'utf8'));
+    - name: Run Trivy vulnerability scanner
+      uses: aquasecurity/trivy-action@master
+      with:
+        image-ref: 'pr_image:${{ github.sha }}'
+        format: 'json'
+        output: 'trivy-results.json'
+        exit-code: '1'
+        ignore-unfixed: 'false'
+        severity: 'CRITICAL,HIGH'
+      continue-on-error: true
+
+    - name: Process and post Trivy scan results
+      uses: actions/github-script@v7
+      with:
+        github-token: ${{secrets.GITHUB_TOKEN}}
+        script: |
+          const fs = require('fs');
+          let commentBody = '## Trivy Security Scan Results for PR\n\n';
+          
+          try {
+            const trivyResults = JSON.parse(fs.readFileSync('trivy-results.json', 'utf8'));
             
-            let comment = '## Trivy Security Scan Results\n\n';
-            let vulnerabilities = [];
-            
-            if (results.Results && results.Results.length > 0) {
-              vulnerabilities = results.Results.flatMap(r => r.Vulnerabilities || []);
-            }
-            
-            if (vulnerabilities.length === 0) {
-              comment += 'No vulnerabilities found.';
-            } else {
-              comment += `${vulnerabilities.length} vulnerabilities found:\n\n`;
-              vulnerabilities.forEach(vuln => {
-                comment += `- **${vuln.Severity}**: ${vuln.VulnerabilityID} in ${vuln.PkgName}\n`;
-                comment += `  Description: ${vuln.Title}\n`;
-                comment += `  Installed Version: ${vuln.InstalledVersion}\n`;
-                comment += `  Fixed Version: ${vuln.FixedVersion || 'Not available'}\n\n`;
+            if (trivyResults.Results && trivyResults.Results.some(result => result.Vulnerabilities && result.Vulnerabilities.length > 0)) {
+              commentBody += 'Vulnerabilities found:\n\n';
+              commentBody += '| Vulnerability ID | Package Name | Installed Version | Severity |\n';
+              commentBody += '|------------------|--------------|-------------------|----------|\n';
+              trivyResults.Results.forEach(result => {
+                if (result.Vulnerabilities) {
+                  result.Vulnerabilities.forEach(vuln => {
+                    commentBody += `| ${vuln.VulnerabilityID} | ${vuln.PkgName} | ${vuln.InstalledVersion} | ${vuln.Severity} |\n`;
+                  });
+                }
               });
+              commentBody += '\nPlease review and address these vulnerabilities before merging.';
+            } else {
+              commentBody += '🎉 No vulnerabilities found! Great job on maintaining a secure codebase.';
             }
-            
-            await github.rest.issues.createComment({
-              issue_number: context.issue.number,
-              owner: context.repo.owner,
-              repo: context.repo.repo,
-              body: comment
-            });
+          } catch (error) {
+            commentBody += `Error processing scan results: ${error.message}\nPlease check the workflow logs for more details.`;
+          }
+          
+          github.rest.issues.createComment({
+            issue_number: context.issue.number,
+            owner: context.repo.owner,
+            repo: context.repo.repo,
+            body: commentBody
+          });
