@@ -1,0 +1,121 @@
+name: Nightly DevSecOps Scan
+
+on:
+  schedule:
+    - cron: '0 2 * * *'  # Runs at 2 AM UTC every day
+  workflow_dispatch:  # Allows manual triggering
+
+jobs:
+  security_scan:
+    runs-on: ubuntu-latest
+    steps:
+    - name: Check out code
+      uses: actions/checkout@v3
+      with:
+        submodules: recursive
+
+    - name: Set up PHP
+      uses: shivammathur/setup-php@v2
+      with:
+        php-version: '8.1'  # Adjust as needed
+
+    - name: Install Composer dependencies
+      run: composer install --prefer-dist --no-progress
+
+    - name: Build Docker image
+      run: docker build . -t appwrite_image:latest
+
+    - name: Run Trivy vulnerability scanner on image
+      uses: aquasecurity/trivy-action@master
+      with:
+        image-ref: 'appwrite_image:latest'
+        format: 'sarif'
+        output: 'trivy-results.sarif'
+        severity: 'CRITICAL,HIGH'
+
+    - name: Run Trivy vulnerability scanner on filesystem
+      uses: aquasecurity/trivy-action@master
+      with:
+        scan-type: 'fs'
+        scan-ref: '.'
+        format: 'sarif'
+        output: 'trivy-fs-results.sarif'
+        severity: 'CRITICAL,HIGH'
+
+    - name: Run OSV-Scanner
+      uses: google/osv-scanner/actions/scanner@main
+      with:
+        scan-type: 'lockfile'
+        lockfile: 'composer.lock'  # Adjust if your lockfile is in a different location
+        format: 'sarif'
+        output: 'osv-results.sarif'
+
+    - name: Run PHP Code Sniffer
+      run: |
+        composer require --dev squizlabs/php_codesniffer
+        vendor/bin/phpcs --standard=PSR12 --report=checkstyle --report-file=phpcs-results.xml src/  # Adjust the path as needed
+
+    - name: Run PHP Mess Detector
+      run: |
+        composer require --dev phpmd/phpmd
+        vendor/bin/phpmd src/ xml cleancode,codesize,controversial,design,naming,unusedcode --reportfile phpmd-results.xml  # Adjust the path as needed
+
+    - name: Upload Trivy results
+      uses: github/codeql-action/upload-sarif@v2
+      with:
+        sarif_file: trivy-results.sarif
+        category: trivy-container
+
+    - name: Upload Trivy filesystem results
+      uses: github/codeql-action/upload-sarif@v2
+      with:
+        sarif_file: trivy-fs-results.sarif
+        category: trivy-filesystem
+
+    - name: Upload OSV-Scanner results
+      uses: github/codeql-action/upload-sarif@v2
+      with:
+        sarif_file: osv-results.sarif
+        category: osv-scanner
+
+    - name: Upload PHPCS results
+      uses: actions/upload-artifact@v3
+      with:
+        name: phpcs-results
+        path: phpcs-results.xml
+
+    - name: Upload PHPMD results
+      uses: actions/upload-artifact@v3
+      with:
+        name: phpmd-results
+        path: phpmd-results.xml
+
+    - name: Summarize and notify
+      if: always()
+      run: |
+        echo "## Nightly DevSecOps Scan Results" > scan_summary.md
+        echo "### Trivy Container Scan" >> scan_summary.md
+        trivy image --format table --output /dev/stdout appwrite_image:latest >> scan_summary.md
+        echo "### Trivy Filesystem Scan" >> scan_summary.md
+        trivy fs --format table --output /dev/stdout . >> scan_summary.md
+        echo "### OSV-Scanner Results" >> scan_summary.md
+        cat osv-results.sarif >> scan_summary.md
+        echo "### PHP Code Sniffer Results" >> scan_summary.md
+        cat phpcs-results.xml >> scan_summary.md
+        echo "### PHP Mess Detector Results" >> scan_summary.md
+        cat phpmd-results.xml >> scan_summary.md
+
+    - name: Create Issue
+      if: failure()
+      uses: actions/github-script@v6
+      with:
+        github-token: ${{secrets.GITHUB_TOKEN}}
+        script: |
+          const fs = require('fs');
+          const summary = fs.readFileSync('scan_summary.md', 'utf8');
+          github.rest.issues.create({
+            owner: context.repo.owner,
+            repo: context.repo.repo,
+            title: 'Nightly DevSecOps Scan Failed',
+            body: summary
+          });
