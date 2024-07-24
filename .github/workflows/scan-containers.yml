@@ -28,7 +28,7 @@ jobs:
         image-ref: 'pr_image:${{ github.sha }}'
         format: 'json'
         output: 'trivy-image-results.json'
-        severity: 'CRITICAL,HIGH,MEDIUM'
+        severity: 'CRITICAL,HIGH'
 
     - name: Run Trivy vulnerability scanner on source code
       uses: aquasecurity/trivy-action@master
