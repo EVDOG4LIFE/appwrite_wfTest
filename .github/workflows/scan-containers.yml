@@ -40,7 +40,7 @@ jobs:
         github-token: ${{secrets.GITHUB_TOKEN}}
         script: |
           const fs = require('fs');
-          let commentBody = '## Trivy Security Scan Results for PR\n\n';
+          let commentBody = '## Security Scan Results for PR\n\n';
           
           function processResults(results, title) {
             let sectionBody = `### ${title}\n\n`;
