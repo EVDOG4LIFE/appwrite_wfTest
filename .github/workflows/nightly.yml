@@ -23,7 +23,7 @@ jobs:
         run: composer install --prefer-dist --no-progress
 
       - name: Run Trivy vulnerability scanner
-        uses: aquasecurity/trivy-action@7b7aa264d83dc58691451798b4d117d53d21edfe
+        uses: aquasecurity/trivy-action@master
         with:
           scan-type: 'fs'
           format: 'table'
@@ -32,7 +32,7 @@ jobs:
         continue-on-error: true  # Continue even if vulnerabilities are found
 
       - name: Run OSV-Scanner
-        uses: google/osv-scanner-action/.github/workflows/osv-scanner-reusable.yml@1f1242919d8a60496dd1874b24b62b2370ed4c78
+        uses: google/osv-scanner-action@v1.8.2
         with:
           scan-args: |-
             -r
