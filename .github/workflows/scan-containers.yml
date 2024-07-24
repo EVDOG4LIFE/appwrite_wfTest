@@ -24,9 +24,13 @@ jobs:
         context: .
         file: ./Dockerfile
         push: false
+        load: true
         tags: pr_image:${{ github.sha }}
         cache-from: type=gha
         cache-to: type=gha,mode=max
+
+    - name: Verify image
+      run: docker image ls
 
     - name: Run Trivy vulnerability scanner
       uses: aquasecurity/trivy-action@master
