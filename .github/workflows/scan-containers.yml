@@ -49,10 +49,9 @@ jobs:
           image-ref: 'appwrite_image:${{ github.sha }}'
           format: 'json'
           output: 'trivy-results.json'
-          exit-code: '0'
+          exit-code: '0'  # Do not fail the job, continue regardless of findings
           ignore-unfixed: 'false'
           severity: 'CRITICAL,HIGH'
-          ignorefile: '.trivyignore'
       - name: Upload Trivy scan results
         uses: actions/upload-artifact@v4
         with:
@@ -66,6 +65,14 @@ jobs:
     steps:
       - name: Check out code
         uses: actions/checkout@v4
+      - name: Ensure main branch exists
+        run: |
+          if git rev-parse --verify main; then
+            echo "Main branch exists."
+          else
+            echo "Main branch does not exist."
+            exit 1
+          fi
       - name: Download Trivy results
         uses: actions/download-artifact@v4
         with:
@@ -80,28 +87,22 @@ jobs:
           image-ref: 'appwrite_image:main'
           format: 'json'
           output: 'trivy-results-main.json'
-          exit-code: '0'
+          exit-code: '0'  # Continue despite findings
           ignore-unfixed: 'false'
           severity: 'CRITICAL,HIGH'
-          ignorefile: '.trivyignore'
       - name: Compare vulnerabilities and create report
         run: |
-          # Install jq for JSON parsing
           sudo apt-get update && sudo apt-get install -y jq
           
-          # Function to extract vulnerabilities
           extract_vulnerabilities() {
             jq -r '.Results[] | select(.Vulnerabilities != null) | .Vulnerabilities[] | select(.Severity == "CRITICAL" or .Severity == "HIGH") | [.VulnerabilityID, .PkgName, .InstalledVersion, .FixedVersion, .Severity] | @tsv' $1
           }
           
-          # Extract vulnerabilities from both scans
           pr_vulns=$(extract_vulnerabilities trivy-results.json)
           main_vulns=$(extract_vulnerabilities trivy-results-main.json)
           
-          # Find new vulnerabilities
           new_vulns=$(comm -23 <(echo "$pr_vulns" | sort) <(echo "$main_vulns" | sort))
           
-          # Create markdown table
           echo "## New Vulnerabilities Introduced" > report.md
           echo "" >> report.md
           echo "| Vulnerability ID | Package Name | Installed Version | Fixed Version | Severity |" >> report.md
@@ -110,7 +111,6 @@ jobs:
             echo "| $id | $pkg | $installed | $fixed | $severity |" >> report.md
           done
           
-          # If no new vulnerabilities, add a message
           if [ -z "$new_vulns" ]; then
             echo "No new high or critical vulnerabilities introduced." >> report.md
           fi
