@@ -11,37 +11,33 @@ jobs:
     - name: Check out code
       uses: actions/checkout@v4
       with:
-        ref: ${{ github.event.pull_request.head.sha }}
         fetch-depth: 0
         submodules: 'recursive'
-
-    - name: Set up Docker Buildx
-      uses: docker/setup-buildx-action@v3
 
     - name: Build the Docker image
       uses: docker/build-push-action@v5
       with:
         context: .
-        file: ./Dockerfile
         push: false
         load: true
         tags: pr_image:${{ github.sha }}
-        cache-from: type=gha
-        cache-to: type=gha,mode=max
 
-    - name: Verify image
-      run: docker image ls
-
-    - name: Run Trivy vulnerability scanner
+    - name: Run Trivy vulnerability scanner on image
       uses: aquasecurity/trivy-action@master
       with:
         image-ref: 'pr_image:${{ github.sha }}'
         format: 'json'
-        output: 'trivy-results.json'
-        exit-code: '1'
-        ignore-unfixed: 'false'
+        output: 'trivy-image-results.json'
         severity: 'CRITICAL,HIGH,MEDIUM'
-      continue-on-error: true
+
+    - name: Run Trivy vulnerability scanner on source code
+      uses: aquasecurity/trivy-action@master
+      with:
+        scan-type: 'fs'
+        scan-ref: '.'
+        format: 'json'
+        output: 'trivy-fs-results.json'
+        severity: 'CRITICAL,HIGH,MEDIUM'
 
     - name: Process and post Trivy scan results
       uses: actions/github-script@v7
@@ -51,26 +47,46 @@ jobs:
           const fs = require('fs');
           let commentBody = '## Trivy Security Scan Results for PR\n\n';
           
-          try {
-            const trivyResults = JSON.parse(fs.readFileSync('trivy-results.json', 'utf8'));
-            
-            if (trivyResults.Results && trivyResults.Results.some(result => result.Vulnerabilities && result.Vulnerabilities.length > 0)) {
-              commentBody += 'Vulnerabilities found:\n\n';
-              commentBody += '| Vulnerability ID | Package Name | Installed Version | Severity |\n';
-              commentBody += '|------------------|--------------|-------------------|----------|\n';
-              trivyResults.Results.forEach(result => {
+          function processResults(results, title) {
+            let sectionBody = `### ${title}\n\n`;
+            if (results.Results && results.Results.some(result => result.Vulnerabilities && result.Vulnerabilities.length > 0)) {
+              sectionBody += '| Package | Version | Vulnerability | Severity | Notes |\n';
+              sectionBody += '|---------|---------|----------------|----------|-------|\n';
+              
+              const uniqueVulns = new Set();
+              
+              results.Results.forEach(result => {
                 if (result.Vulnerabilities) {
                   result.Vulnerabilities.forEach(vuln => {
-                    commentBody += `| ${vuln.VulnerabilityID} | ${vuln.PkgName} | ${vuln.InstalledVersion} | ${vuln.Severity} |\n`;
+                    const vulnKey = `${vuln.PkgName}-${vuln.InstalledVersion}-${vuln.VulnerabilityID}`;
+                    if (!uniqueVulns.has(vulnKey)) {
+                      uniqueVulns.add(vulnKey);
+                      let notes = 'Review if this affects our usage';
+                      if (vuln.PkgName.startsWith('go')) {
+                        notes = 'This may be from our base Docker image';
+                      }
+                      sectionBody += `| ${vuln.PkgName} | ${vuln.InstalledVersion} | [${vuln.VulnerabilityID}](https://nvd.nist.gov/vuln/detail/${vuln.VulnerabilityID}) | ${vuln.Severity} | ${notes} |\n`;
+                    }
                   });
                 }
               });
-              commentBody += '\nPlease review and address these vulnerabilities before merging.';
             } else {
-              commentBody += '🎉 No vulnerabilities found! Great job on maintaining a secure codebase.';
+              sectionBody += '🎉 No vulnerabilities found!\n';
             }
+            return sectionBody;
+          }
+          
+          try {
+            const imageResults = JSON.parse(fs.readFileSync('trivy-image-results.json', 'utf8'));
+            const fsResults = JSON.parse(fs.readFileSync('trivy-fs-results.json', 'utf8'));
+            
+            commentBody += processResults(imageResults, "Docker Image Scan Results");
+            commentBody += '\n';
+            commentBody += processResults(fsResults, "Source Code Scan Results");
+            
           } catch (error) {
-            commentBody += `Error processing scan results: ${error.message}\nPlease check the workflow logs for more details.`;
+            commentBody += `There was an error while running the security scan: ${error.message}\n`;
+            commentBody += 'Please contact the core team for assistance.';
           }
           
           github.rest.issues.createComment({
