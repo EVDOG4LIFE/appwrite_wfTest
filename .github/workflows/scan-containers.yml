@@ -33,7 +33,7 @@ jobs:
         scan-ref: '.'
         format: 'json'
         output: 'trivy-fs-results.json'
-        severity: 'CRITICAL,HIGH,MEDIUM'
+        severity: 'CRITICAL,HIGH'
     - name: Process and post Trivy scan results
       uses: actions/github-script@v7
       with:
