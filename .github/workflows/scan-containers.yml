@@ -1,5 +1,5 @@
 name: PR Security Scan
-on:
+on: 
   pull_request:
     types: [opened, synchronize, reopened]
   workflow_dispatch:
