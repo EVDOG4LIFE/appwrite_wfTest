@@ -2,6 +2,7 @@ name: Nightly Security Scan
 on:
   schedule:
     - cron: '0 0 * * *'  # 12am UTC daily runtime
+  workflow_dispatch: 
 
 jobs:
   Scan:
