@@ -5,39 +5,75 @@ on:
   workflow_dispatch: 
 
 jobs:
-  Scan:
-    name: Trivy Scan
+  Build:
+    name: Build Docker Image and Checkout Code
     runs-on: ubuntu-20.04
     steps:
       - name: Checkout code
-        uses: actions/checkout@v3
+        uses: actions/checkout@v4
         with:
           submodules: recursive
-
       - name: Build the Docker image
         run: docker build . -t appwrite_image:latest
+      - name: Save Docker image
+        run: docker save appwrite_image:latest > appwrite_image.tar
 
+  ScanImage:
+    name: Scan Docker Image
+    needs: Build
+    runs-on: ubuntu-20.04
+    steps:
+      - name: Load Docker image
+        run: docker load < appwrite_image.tar
       - name: Scan Docker image
-        uses: aquasecurity/trivy-action@master
+        uses: aquasecurity/trivy-action@0.20.0
         with:
           image-ref: 'appwrite_image:latest'
           format: 'sarif'
           output: 'trivy-image-results.sarif'
           severity: 'CRITICAL,HIGH'
+      - name: Upload image scan results
+        uses: actions/upload-artifact@v2
+        with:
+          name: trivy-image-results
+          path: trivy-image-results.sarif
 
+  ScanCode:
+    name: Scan Code
+    runs-on: ubuntu-20.04
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v3
       - name: Scan Code
         uses: aquasecurity/trivy-action@0.20.0
         with:
           scan-type: 'fs'
           format: 'sarif'
           output: 'trivy-fs-results.sarif'
-          severity: 'CRITICAL,HIGH' 
+          severity: 'CRITICAL,HIGH'
+      - name: Upload code scan results
+        uses: actions/upload-artifact@v2
+        with:
+          name: trivy-fs-results
+          path: trivy-fs-results.sarif
 
+  UploadResults:
+    name: Upload Scan Results
+    needs: [ScanImage, ScanCode]
+    runs-on: ubuntu-20.04
+    steps:
+      - name: Download image scan results
+        uses: actions/download-artifact@v2
+        with:
+          name: trivy-image-results
+      - name: Download code scan results
+        uses: actions/download-artifact@v2
+        with:
+          name: trivy-fs-results
       - name: Upload Code Scan Results
         uses: github/codeql-action/upload-sarif@v2
         with:
           sarif_file: 'trivy-fs-results.sarif'
-
       - name: Upload Docker Image Scan Results
         uses: github/codeql-action/upload-sarif@v2
         with:
