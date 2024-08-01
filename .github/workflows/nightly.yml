@@ -2,79 +2,46 @@ name: Nightly Security Scan
 on:
   schedule:
     - cron: '0 0 * * *'  # 12am UTC daily runtime
-  workflow_dispatch: 
+  workflow_dispatch:
 
 jobs:
-  Build:
-    name: Build Docker Image and Checkout Code
-    runs-on: ubuntu-20.04
+  scan-image:
+    name: Scan Docker Image
+    runs-on: ubuntu-latest
     steps:
-      - name: Checkout code
+      - name: Check out code
         uses: actions/checkout@v4
         with:
           submodules: recursive
       - name: Build the Docker image
         run: docker build . -t appwrite_image:latest
-      - name: Save Docker image
-        run: docker save appwrite_image:latest > appwrite_image.tar
-
-  ScanImage:
-    name: Scan Docker Image
-    needs: Build
-    runs-on: ubuntu-20.04
-    steps:
-      - name: Load Docker image
-        run: docker load < appwrite_image.tar
-      - name: Scan Docker image
+      - name: Run Trivy vulnerability scanner on image
         uses: aquasecurity/trivy-action@0.20.0
         with:
           image-ref: 'appwrite_image:latest'
           format: 'sarif'
           output: 'trivy-image-results.sarif'
+          ignore-unfixed: 'false'
           severity: 'CRITICAL,HIGH'
-      - name: Upload image scan results
-        uses: actions/upload-artifact@v2
+      - name: Upload Docker Image Scan Results
+        uses: github/codeql-action/upload-sarif@v2
         with:
-          name: trivy-image-results
-          path: trivy-image-results.sarif
+          sarif_file: 'trivy-image-results.sarif'
 
-  ScanCode:
+  scan-code:
     name: Scan Code
-    runs-on: ubuntu-20.04
+    runs-on: ubuntu-latest
     steps:
-      - name: Checkout code
-        uses: actions/checkout@v3
-      - name: Scan Code
-        uses: aquasecurity/trivy-action@0.20.0
+      - name: Check out code
+        uses: actions/checkout@v4
+      - name: Run Trivy vulnerability scanner on filesystem
+        uses: aquasecurity/trivy-action@v.0.20.0
         with:
           scan-type: 'fs'
           format: 'sarif'
           output: 'trivy-fs-results.sarif'
           severity: 'CRITICAL,HIGH'
-      - name: Upload code scan results
-        uses: actions/upload-artifact@v2
-        with:
-          name: trivy-fs-results
-          path: trivy-fs-results.sarif
-
-  UploadResults:
-    name: Upload Scan Results
-    needs: [ScanImage, ScanCode]
-    runs-on: ubuntu-20.04
-    steps:
-      - name: Download image scan results
-        uses: actions/download-artifact@v2
-        with:
-          name: trivy-image-results
-      - name: Download code scan results
-        uses: actions/download-artifact@v2
-        with:
-          name: trivy-fs-results
       - name: Upload Code Scan Results
         uses: github/codeql-action/upload-sarif@v2
         with:
           sarif_file: 'trivy-fs-results.sarif'
-      - name: Upload Docker Image Scan Results
-        uses: github/codeql-action/upload-sarif@v2
-        with:
-          sarif_file: 'trivy-image-results.sarif'
