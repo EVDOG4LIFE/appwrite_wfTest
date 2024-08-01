@@ -1,83 +1,50 @@
-name: Nightly DevSecOps Scan
+name: Nightly
 
 on:
   schedule:
-    - cron: '0 2 * * *'  # Runs at 2 AM UTC every day
-  workflow_dispatch:  # Allows manual triggering
-
-permissions:
-  security-events: write  # Required to upload SARIF file to the security tab
-  contents: read          # Required to read commit contents
+    - cron: '0 0 * * *'  # Run at 12am UTC daily
+  workflow_dispatch:  # Allow manual triggering
 
 jobs:
-  security_scan:
-    runs-on: ubuntu-latest
+  scan:
+    name: Trivy Scan and SBOM
+    runs-on: ubuntu-20.04
     steps:
-      - name: Check out code
+      - name: Checkout code
         uses: actions/checkout@v3
-        with:
-          submodules: true
-
-      - name: Set up PHP
-        uses: shivammathur/setup-php@v2
-        with:
-          php-version: '8.1'
-
-      - name: Install Composer dependencies
-        run: composer install --prefer-dist --no-progress
 
       - name: Run Trivy vulnerability scanner
-        uses: aquasecurity/trivy-action@master
+        uses: aquasecurity/trivy-action@0.20.0
         with:
           scan-type: 'fs'
-          format: 'table'
-          output: 'trivy-results.txt'
-          severity: 'CRITICAL,HIGH'
-        continue-on-error: true  # Continue even if vulnerabilities are found
+          format: 'sarif'
+          output: 'trivy-results.sarif'
+          severity: 'CRITICAL,HIGH,MEDIUM'
 
-      - name: Run OSV-Scanner
-        uses: google/osv-scanner-action@v1.8.2
+      - name: Upload Trivy scan results to GitHub Security tab
+        uses: github/codeql-action/upload-sarif@v2
         with:
-          scan-args: |-
-            -r
-            --skip-git
-            ./
-        continue-on-error: true
+          sarif_file: 'trivy-results.sarif'
 
-      - name: Run PHP Code Sniffer
-        run: |
-          composer require --dev squizlabs/php_codesniffer
-          vendor/bin/phpcs --standard=PSR12 --report=full --report-file=phpcs-results.txt src/
-        continue-on-error: true
-
-      - name: Run PHP Mess Detector
-        run: |
-          composer require --dev phpmd/phpmd
-          vendor/bin/phpmd src/ text cleancode,codesize,controversial,design,naming,unusedcode > phpmd-results.txt
-        continue-on-error: true
-
-      - name: Generate scan summary
-        run: |
-          echo "## Nightly DevSecOps Scan Results" > scan_summary.md
-          echo "### Trivy Scan Results" >> scan_summary.md
-          cat trivy-results.txt >> scan_summary.md
-          echo "### OSV-Scanner Results" >> scan_summary.md
-          cat osv-results.sarif >> scan_summary.md
-          echo "### PHP Code Sniffer Results" >> scan_summary.md
-          cat phpcs-results.txt >> scan_summary.md
-          echo "### PHP Mess Detector Results" >> scan_summary.md
-          cat phpmd-results.txt >> scan_summary.md
-
-      - name: Create Issue
-        uses: actions/github-script@v6
+      - name: Generate SBOM
+        uses: aquasecurity/trivy-action@0.20.0
         with:
-          github-token: ${{ secrets.GITHUB_TOKEN }}
-          script: |
-            const fs = require('fs');
-            const summary = fs.readFileSync('scan_summary.md', 'utf8');
-            github.rest.issues.create({
-              owner: context.repo.owner,
-              repo: context.repo.repo,
-              title: 'Nightly DevSecOps Scan Results',
-              body: summary
-            });
+          scan-type: 'fs'
+          format: 'cyclonedx'
+          output: 'sbom.json'
+
+      - name: Upload SBOM to GitHub Dependency Graph
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          if [ -f sbom.json ]; then
+            gh api \
+              --method POST \
+              -H "Accept: application/vnd.github+json" \
+              -H "X-GitHub-Api-Version: 2022-11-28" \
+              /repos/${{ github.repository }}/dependency-graph/sbom \
+              -f sbom=@sbom.json
+          else
+            echo "SBOM file not found."
+            exit 1
+          fi
