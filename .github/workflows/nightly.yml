@@ -22,7 +22,7 @@ jobs:
           format: 'sarif'
           output: 'trivy-image-results.sarif'
           ignore-unfixed: 'false'
-          severity: 'CRITICAL,HIGH'
+          severity: 'CRITICAL,HIGH,LOW'
       - name: Upload Docker Image Scan Results
         uses: github/codeql-action/upload-sarif@v2
         with:
@@ -40,7 +40,7 @@ jobs:
           scan-type: 'fs'
           format: 'sarif'
           output: 'trivy-fs-results.sarif'
-          severity: 'CRITICAL,HIGH'
+          severity: 'CRITICAL,HIGH,LOW'
       - name: Upload Code Scan Results
         uses: github/codeql-action/upload-sarif@v2
         with:
