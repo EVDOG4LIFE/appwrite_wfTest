@@ -1,9 +1,9 @@
-name: "Tests"
+name: "Tests" fuck
 
 concurrency:
   group: ${{ github.workflow }}-${{ github.ref }}
   cancel-in-progress: true
-
+ 
 env:
   IMAGE: appwrite-dev
   CACHE_KEY: appwrite-dev-${{ github.event.pull_request.head.sha }}
