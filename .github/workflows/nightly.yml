@@ -11,7 +11,7 @@ jobs:
     steps:
       - name: Check out code
         uses: actions/checkout@v4
-        with:
+        with: 
           submodules: recursive
       - name: Build the Docker image
         run: docker build . -t appwrite_image:latest
