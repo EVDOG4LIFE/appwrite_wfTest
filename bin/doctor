@@ -1,3 +1,3 @@
 #!/bin/sh
-
+ fuadsk
 php /usr/src/code/app/cli.php doctor $@
