@@ -10,7 +10,7 @@ use Appwrite\Platform\Appwrite;
 use Utopia\Cache\Adapter\Sharding;
 use Utopia\Cache\Cache;
 use Utopia\CLI\CLI;
-use Utopia\CLI\Console;
+use Utopia\CLI\Console; 
 use Utopia\Config\Config;
 use Utopia\Database\Database;
 use Utopia\Database\Document;
