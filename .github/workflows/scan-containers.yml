@@ -1,7 +1,5 @@
 name: PR Security Scan
 on:
-  pull_request:
-    types: [opened, synchronize, reopened]
   pull_request_target:
     branches: ['**']
 
