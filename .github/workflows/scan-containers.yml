@@ -7,7 +7,7 @@ jobs:
   scan:
     runs-on: ubuntu-latest
     steps:
-    - name: Check out code
+    - name: Check out code 
       uses: actions/checkout@v4
       with:
         fetch-depth: 0
