@@ -1,6 +1,6 @@
 <?php
 
-require_once __DIR__ . '/init.php';
+require_once __DIR__ . '/init.php'; 
 require_once __DIR__ . '/controllers/general.php';
 
 use Appwrite\Event\Certificate;
@@ -13,7 +13,7 @@ use Utopia\CLI\CLI;
 use Utopia\CLI\Console;
 use Utopia\Config\Config;
 use Utopia\Database\Database;
-use Utopia\Database\Document;
+use Utopia\Database\Document;   
 use Utopia\Database\Validator\Authorization;
 use Utopia\DSN\DSN;
 use Utopia\Logger\Log;
