@@ -90,7 +90,7 @@ jobs:
       uses: peter-evans/find-comment@v3
       id: fc
       with:
-        token: ${{ secrets.GITHUB_TOKEN }}
+        token: ${{ secrets.READ_WRITE_TOKEN }}
         issue-number: ${{ github.event.pull_request.number }}
         comment-author: 'github-actions[bot]'
         body-includes: Security Scan Results for PR
@@ -98,7 +98,7 @@ jobs:
     - name: Create or update comment
       uses: peter-evans/create-or-update-comment@v3
       with:
-        token: ${{ secrets.GITHUB_TOKEN }}
+        token: ${{ secrets.READ_WRITE_TOKEN }}
         issue-number: ${{ github.event.pull_request.number }}
         comment-id: ${{ steps.fc.outputs.comment-id }}
         body: ${{ steps.process-results.outputs.comment-body }}
