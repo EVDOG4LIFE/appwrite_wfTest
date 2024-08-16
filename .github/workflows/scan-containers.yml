@@ -1,7 +1,7 @@
 name: PR Security Scan
-on:
-  pull_request:
-    branches: ['**']
+on: 
+  pull_request_target:
+    types: [opened, synchronize, reopened]
 
 jobs:
   scan:
@@ -10,9 +10,10 @@ jobs:
       contents: read
       pull-requests: write
     steps:
-    - name: Check out code
+    - name: Check out code 
       uses: actions/checkout@v4
       with:
+        ref: ${{ github.event.pull_request.head.sha }}
         fetch-depth: 0
         submodules: 'recursive'
 
@@ -87,7 +88,6 @@ jobs:
           }
           
           core.setOutput('comment-body', commentBody);
-
     - name: Find Comment
       uses: peter-evans/find-comment@v3
       id: fc
