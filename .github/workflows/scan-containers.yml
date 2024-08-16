@@ -1,19 +1,19 @@
 name: PR Security Scan
 on:
-  pull_request_target:
-    types: [opened, synchronize, reopened]
+  pull_request:
+    branches: ['**']
+
+permissions:
+  contents: read
+  pull-requests: write
 
 jobs:
   scan:
     runs-on: ubuntu-latest
-    permissions:
-      contents: read
-      pull-requests: write
     steps:
-    - name: Check out code 
+    - name: Check out code
       uses: actions/checkout@v4
       with:
-        ref: ${{ github.event.pull_request.head.sha }}
         fetch-depth: 0
         submodules: 'recursive'
 
